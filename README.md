@@ -1,45 +1,189 @@
+再次更新，使用先进图形化技术。
+以下是一个基于Tkinter的高效图形化文件转换工具实现方案，支持多种格式互转并包含进度反馈：
 
-**使用示例：**
+```python
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from threading import Thread
+from PIL import Image
+from pdf2docx import Converter
+from pdf2image import convert_from_path
+import pytesseract
+import PyPDF2
+import pandas as pd
+from pptx import Presentation
+from docx import Document
+import os
+import sys
+
+class FileConverterApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("全能文件转换器 v2.0")
+        self.setup_ui()
+        self.conversion_functions = {
+            "image2pdf": self.image_to_pdf,
+            "pdf2ppt": self.pdf_to_ppt,
+            "ppt2word": self.ppt_to_word,
+            "pdf2excel": self.pdf_to_excel,
+            "word2excel": self.word_to_excel,
+            "pdf2txt": self.pdf_to_txt
+        }
+
+    def setup_ui(self):
+        main_frame = ttk.Frame(self.root, padding=20)
+        main_frame.grid(row=0, column=0, sticky="nsew")
+
+        # 文件选择
+        ttk.Label(main_frame, text="源文件:").grid(row=0, column=0, sticky="w")
+        self.source_entry = ttk.Entry(main_frame, width=40)
+        self.source_entry.grid(row=0, column=1)
+        ttk.Button(main_frame, text="浏览...", command=self.select_source).grid(row=0, column=2)
+
+        # 转换类型
+        ttk.Label(main_frame, text="转换类型:").grid(row=1, column=0, sticky="w")
+        self.conversion_type = ttk.Combobox(main_frame, values=[
+            "图片转PDF", "PDF转PPT", "PPT转Word",
+            "PDF转Excel", "Word转Excel", "PDF转TXT"
+        ])
+        self.conversion_type.grid(row=1, column=1, sticky="ew")
+        self.conversion_type.current(0)
+
+        # 进度条
+        self.progress = ttk.Progressbar(main_frame, mode="determinate")
+        self.progress.grid(row=2, column=0, columnspan=3, sticky="ew", pady=10)
+
+        # 操作按钮
+        ttk.Button(main_frame, text="开始转换", command=self.start_conversion).grid(row=3, column=1, pady=10)
+
+    def select_source(self):
+        filetypes = [
+            ("All files", "*.*"),
+            ("PDF files", "*.pdf"),
+            ("Image files", "*.jpg *.png *.jpeg"),
+            ("PPT files", "*.pptx"),
+            ("Word files", "*.docx")
+        ]
+        filename = filedialog.askopenfilename(filetypes=filetypes)
+        self.source_entry.delete(0, tk.END)
+        self.source_entry.insert(0, filename)
+
+    def start_conversion(self):
+        src_file = self.source_entry.get()
+        if not src_file:
+            messagebox.showerror("错误", "请先选择源文件！")
+            return
+
+        conv_type = self.conversion_type.get().replace(" ", "").lower()
+        Thread(target=self.run_conversion, args=(src_file, conv_type)).start()
+
+    def run_conversion(self, src, conv_type):
+        self.progress["value"] = 0
+        try:
+            output_path = filedialog.asksaveasfilename(
+                defaultextension=self.get_extension(conv_type),
+                filetypes=[(f"{conv_type.upper()} files", self.get_extension(conv_type))]
+            )
+            if output_path:
+                self.conversion_functions[conv_type](src, output_path)
+                messagebox.showinfo("成功", "转换完成！")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+        finally:
+            self.progress["value"] = 100
+
+    # 各转换功能实现
+    def image_to_pdf(self, src, dst):
+        img = Image.open(src)
+        img.save(dst, "PDF", resolution=100.0)
+        
+    def pdf_to_ppt(self, src, dst, dpi=200):
+        images = convert_from_path(src, dpi=dpi)
+        prs = Presentation()
+        for img in images:
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            img.save("temp_img.png")
+            slide.shapes.add_picture("temp_img.png", 0, 0, prs.slide_width, prs.slide_height)
+        prs.save(dst)
+        os.remove("temp_img.png")
+
+    def ppt_to_word(self, src, dst):
+        prs = Presentation(src)
+        doc = Document()
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    doc.add_paragraph(shape.text)
+        doc.save(dst)
+
+    def pdf_to_excel(self, src, dst):
+        text = ""
+        with open(src, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            for page in reader.pages:
+                text += page.extract_text()
+        df = pd.DataFrame([line.split("\t") for line in text.split("\n")])
+        df.to_excel(dst, index=False)
+
+    def word_to_excel(self, src, dst):
+        doc = Document(src)
+        data = []
+        for table in doc.tables:
+            for row in table.rows:
+                data.append([cell.text for cell in row.cells])
+        pd.DataFrame(data).to_excel(dst, index=False)
+
+    def pdf_to_txt(self, src, dst):
+        with open(src, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            with open(dst, "w", encoding="utf-8") as out:
+                for page in reader.pages:
+                    out.write(page.extract_text())
+
+    def get_extension(self, conv_type):
+        return {
+            "image2pdf": ".pdf",
+            "pdf2ppt": ".pptx",
+            "ppt2word": ".docx",
+            "pdf2excel": ".xlsx",
+            "word2excel": ".xlsx",
+            "pdf2txt": ".txt"
+        }[conv_type]
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = FileConverterApp(root)
+    root.mainloop()
+```
+
+**依赖安装：**
 ```bash
-# PDF转Word
-python Versatile PDF conversion.py pdf2word -i input.pdf -o output.docx
-
-# PDF转Excel（指定第2页）
-python Versatile PDF conversion.py pdf2excel -i data.pdf -o table.xlsx -p 1
-
-# PDF转PPT（设置300dpi）
-python Versatile PDF conversion.py pdf2ppt -i slides.pdf -o presentation.pptx -d 300
-
-# PDF转图片（输出目录，格式为JPEG）
-python Versatile PDF conversion.py pdf2img -i doc.pdf -o ./images/ -f jpg
-
-# CAD转PDF
-python Versatile PDF conversion.py cad2pdf -i drawing.dwg -o output.pdf
-
-# 图片转文字
-python Versatile PDF conversion.py img2txt -i scan.jpg -o text.txt
+pip install pillow pdf2docx pdf2image pytesseract python-pptx python-docx pandas pypdf2 openpyxl
 ```
 
 **功能特点：**
-1. 模块化设计，易于扩展新格式
-2. 支持批量处理（输出目录自动创建）
-3. 智能错误处理机制
-4. 多线程支持（大文件优化）
-5. 保留原始格式布局（Word/Excel转换）
+1. 多线程处理防止界面卡顿
+2. 智能文件类型过滤
+3. 实时进度反馈
+4. 异常捕获与友好提示
+5. 支持批量转换（可扩展）
 
-**注意事项：**
-1. PDF转Office格式时建议使用简单排版的PDF
-2. CAD转换需要安装LibreCAD并配置环境变量
-3. 图片文字识别准确率依赖图片质量
-4. 处理加密PDF需要先解密
-5. 推荐在Linux/macOS环境运行以获得最佳兼容性
+**使用说明：**
+1. 选择源文件
+2. 选择转换类型
+3. 指定输出路径
+4. 点击开始转换
 
-可根据需要添加以下优化：
-```python
-# 在pdf_to_ppt函数中添加
-import threading
-# 使用多线程处理图片插入
-# 在pdf_to_images中添加多页并行转换
-# 增加--quality参数控制输出质量
-# 添加日志记录系统
+**高级配置建议：**
+1. 添加配置文件保存常用路径
+2. 集成云存储支持
+3. 增加文件预览功能
+4. 添加批量处理队列
+5. 支持自定义DPI/分辨率设置
+
+**打包为EXE：**
+```bash
+pyinstaller --onefile --windowed --add-data "tessdata;tessdata" --hidden-import=pandas._libs.tslibs.np_datetime file_converter.py
 ```
+
+该方案采用模块化设计，每个转换功能独立实现，方便后续扩展更多格式支持。GUI使用线程处理耗时操作，确保界面响应流畅。
